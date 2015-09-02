@@ -286,7 +286,8 @@ var styles = StyleSheet.create({
     margin: 10,
     flex: 1,
     bottom: 0,
-    height: Display.height*.30
+    height: Display.height*.49
+
   }
 });
 
