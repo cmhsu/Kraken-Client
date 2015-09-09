@@ -46,7 +46,8 @@ var VenueTab = React.createClass({
       venue: this.props.venue,
       overallRating: 0,
       dataSource: ds.cloneWithRows(this.props.venue.comments),
-      keyboardSpace: 0
+      keyboardSpace: 0,
+      userLastRating: 0,
     };
   },
 
@@ -159,8 +160,17 @@ var VenueTab = React.createClass({
   getOverallRating() {
     var ratings = this.state.venue.ratings;
     var sum = 0;
+    var userAlreadyRated = false;
     for (var i = 0; i < ratings.length; i++) {
       sum += ratings[i].rating;
+      if (ratings[i].user === this.state.user) {
+        this.setState({userLastRating: ratings[i].rating});
+        this.setState({voteValue: ratings[i].rating / 10});
+        userAlreadyRated = true;
+      }
+    }
+    if (userAlreadyRated === false) {
+      this.setState({userLastRating: 'N/A'});
     }
     if (ratings.length > 0) {
       var average = Math.round(sum / ratings.length);
@@ -170,11 +180,11 @@ var VenueTab = React.createClass({
     this.setState({overallRating: average});
   },
 
-  setRoundVoteValue(voteValue) {
-    voteValue *= 10;
-    voteValue = Math.round(voteValue);
-    this.setState({voteValue: voteValue})
-  },
+  //setRoundVoteValue(voteValue) {
+  //  voteValue *= 10;
+  //  voteValue = Math.round(voteValue);
+  //  this.setState({voteValue: voteValue})
+  //},
 
   renderComments(comments) {
     if (comments) {
@@ -273,18 +283,20 @@ var VenueTab = React.createClass({
   },
 
   slidingComplete(voteValue, venue) {
+    var voteValue = Math.round(voteValue*10);
+    this.setState({userLastRating: voteValue});
     fetch(config.serverURL + '/api/venues/' + venue._id)
       .then(response => response.json())
       .then(modVenue => {
         for (var i = 0; i < modVenue.ratings.length; i++) {
           if (modVenue.ratings[i].user === this.state.user) {
-            modVenue.ratings[i].rating = Math.round(voteValue*10);
+            modVenue.ratings[i].rating = voteValue;
             break;
           }
         }
         if (i === modVenue.ratings.length) {
           modVenue.ratings.push({
-            rating: Math.round(voteValue*10),
+            rating: voteValue,
             user: this.state.user
           });
         }
@@ -338,7 +350,7 @@ var VenueTab = React.createClass({
 
   render() {
     var venue = this.props.venue;
-    var THUMB_URLS = ['sneakers', 'pool_party', 'http://www.fubiz.net/wp-content/uploads/2012/03/the-kraken-existence2.jpg', 'http://img2.wikia.nocookie.net/__cb20140311041907/villains/images/b/bb/The_Kraken.jpg', 'http://vignette2.wikia.nocookie.net/reddits-world/images/8/8e/Kraken_v2_by_elmisa-d70nmt4.jpg/revision/latest?cb=20140922042121', 'http://orig11.deviantart.net/ccd8/f/2011/355/0/c/kraken_by_elmisa-d4ju669.jpg', 'http://orig14.deviantart.net/40df/f/2014/018/d/4/the_kraken_by_alexstoneart-d72o83n.jpg', 'http://orig10.deviantart.net/bf30/f/2010/332/f/5/kraken_by_mabuart-d33tchk.jpg', 'http://static.comicvine.com/uploads/original/12/120846/2408132-kraken_by_neo_br.jpg', 'https://upload.wikimedia.org/wikipedia/commons/9/9d/Colossal_octopus_by_Pierre_Denys_de_Montfort.jpg', 'http://www.wallpaper4me.com/images/wallpapers/deathbykraken-39598.jpeg', 'http://img06.deviantart.net/3c5b/i/2012/193/d/9/kraken__work_in_progress_by_rkarl-d56zu66.jpg', 'http://i.gr-assets.com/images/S/photo.goodreads.com/hostedimages/1393990556r/8792967._SY540_.jpg', 'http://static.fjcdn.com/pictures/Kraken+found+on+tumblr_5b3d72_4520925.jpg'];
+    var THUMB_URLS = ['sneakers', 'pool_party', 'http://img2.wikia.nocookie.net/__cb20140311041907/villains/images/b/bb/The_Kraken.jpg', 'http://vignette2.wikia.nocookie.net/reddits-world/images/8/8e/Kraken_v2_by_elmisa-d70nmt4.jpg/revision/latest?cb=20140922042121', 'http://orig11.deviantart.net/ccd8/f/2011/355/0/c/kraken_by_elmisa-d4ju669.jpg', 'http://orig14.deviantart.net/40df/f/2014/018/d/4/the_kraken_by_alexstoneart-d72o83n.jpg', 'http://orig10.deviantart.net/bf30/f/2010/332/f/5/kraken_by_mabuart-d33tchk.jpg', 'http://static.comicvine.com/uploads/original/12/120846/2408132-kraken_by_neo_br.jpg', 'https://upload.wikimedia.org/wikipedia/commons/9/9d/Colossal_octopus_by_Pierre_Denys_de_Montfort.jpg', 'http://www.wallpaper4me.com/images/wallpapers/deathbykraken-39598.jpeg', 'http://img06.deviantart.net/3c5b/i/2012/193/d/9/kraken__work_in_progress_by_rkarl-d56zu66.jpg', 'http://i.gr-assets.com/images/S/photo.goodreads.com/hostedimages/1393990556r/8792967._SY540_.jpg', 'http://static.fjcdn.com/pictures/Kraken+found+on+tumblr_5b3d72_4520925.jpg'];
     return (
       <View>
         <Text style={styles.header}>
@@ -354,13 +366,13 @@ var VenueTab = React.createClass({
           Address: {venue.address}
         </Text>
         <Text style={[styles.text, styles.yourRating]} >
-          Overall rating: {this.state.overallRating} | Your last rating: {this.state.voteValue}
+          Overall rating: {this.state.overallRating} | Your last rating: {this.state.userLastRating}
         </Text>
         <SliderIOS
           style={styles.slider}
-          onValueChange={(voteValue) => this.setState({voteValue: Math.round(voteValue*10)})}
           onSlidingComplete={(voteValue) => this.slidingComplete(voteValue, venue)}
-          maximumTrackTintColor='red'/>
+          maximumTrackTintColor='red'
+          value={this.state.voteValue}/>
         <ScrollView
           horizontal={true}
           style={styles.horizontalScrollView}
