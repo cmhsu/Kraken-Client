@@ -142,10 +142,6 @@ var VenueTab = React.createClass({
         atVenue: distance < 100
       })
     }
-    //this.setState({
-    //  venue: venue,
-    //  dataSource: ds.cloneWithRows(venue.comments)
-    //});
   },
 
   componentWillMount: function() {
@@ -189,6 +185,9 @@ var VenueTab = React.createClass({
       }
     }
     if (userAlreadyRated === false) {
+      this.setState({voteValue: 0});
+    }
+    if (userAlreadyRated === false) {
       this.setState({userLastRating: 'N/A'});
     }
     if (numRatings > 0) {
@@ -198,12 +197,6 @@ var VenueTab = React.createClass({
     }
     this.setState({overallRating: average});
   },
-
-  //setRoundVoteValue(voteValue) {
-  //  voteValue *= 10;
-  //  voteValue = Math.round(voteValue);
-  //  this.setState({voteValue: voteValue})
-  //},
 
   renderComments(comments) {
     if (comments) {
@@ -223,10 +216,24 @@ var VenueTab = React.createClass({
             color={color}
             style={styles.icon}
             />
-          <Text flexWrap="wrap" numberOfLines={3} style={{flex: 1, color: commentTextColor}}>{comments.datetime}: {comments.content}</Text>
+          <Text flexWrap="wrap" numberOfLines={3} style={{flex: 1, color: commentTextColor}}>
+            {comments.datetime}: {comments.content}
+          </Text>
+          <TouchableHighlight onPress={this.flag}>
+            <Icon
+              name="fontawesome|flag-o"
+              size={19}
+              color="#898888"
+              onPress={this.flag}
+              style={styles.icon} />
+          </TouchableHighlight>
         </View>
       )
     }
+  },
+
+  flag() {
+
   },
 
   getRandomColor() {
@@ -312,7 +319,7 @@ var VenueTab = React.createClass({
       },
       body: JSON.stringify({
         user: this.state.user,
-        rating: Math.round(voteValue * 10)
+        rating: voteValue
       })
     })
     .then(response => response.json())
