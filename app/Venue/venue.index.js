@@ -72,7 +72,6 @@ var VenueTab = React.createClass({
     fetch(route)
       .then(response => response.json())
       .then(function(res) {
-        res.comments.reverse();
         for (var i = 0; i < res.comments.length; i++) {
           res.comments[i].datetime = moment(res.comments[i].datetime).fromNow();
         }
@@ -220,7 +219,10 @@ var VenueTab = React.createClass({
           <Text flexWrap="wrap" numberOfLines={3} style={{flex: 1, color: commentTextColor}}>
             {comments.datetime}: {comments.content}
           </Text>
-          <TouchableHighlight onPress={this.flag.bind(this, commentID)}>
+          <TouchableHighlight
+            underlayColor='white'
+            activeOpacity='0.4'
+            onPress={this.flag.bind(this, commentID)}>
             <Icon
               name="fontawesome|flag-o"
               size={19}
@@ -306,7 +308,6 @@ var VenueTab = React.createClass({
     fetch(route)
       .then(response => response.json())
       .then(res => {
-        res.comments.reverse();
         for (var i = 0; i < res.comments.length; i++) {
           if (res.comments[i].creator === context.state.user) {
             userAlreadyPosted = true;
