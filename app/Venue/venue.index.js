@@ -286,6 +286,9 @@ var VenueTab = React.createClass({
           });
         }
       })
+      .then(function() {
+        context.fetchVenue();
+      });
   },
 
   getRandomColor() {
