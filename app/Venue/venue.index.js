@@ -72,6 +72,7 @@ var VenueTab = React.createClass({
     fetch(route)
       .then(response => response.json())
       .then(function(res) {
+        res.comments.reverse();
         for (var i = 0; i < res.comments.length; i++) {
           res.comments[i].datetime = moment(res.comments[i].datetime).fromNow();
         }
@@ -117,7 +118,6 @@ var VenueTab = React.createClass({
       var coords = nextProps.geolocation.coords;
       var distance = this.calculateDistance(coords, venue);
     }
-
     if (venueChanged) {
       fetch(route)
         .then(response => response.json())
@@ -203,6 +203,7 @@ var VenueTab = React.createClass({
       var icon = 'fontawesome|' + comments.icon;
       var color = comments.color;
       var atVenue = comments.atVenue;
+      var commentID = comments._id;
       if (atVenue) {
         var commentTextColor = '#000000';
       } else {
@@ -219,12 +220,11 @@ var VenueTab = React.createClass({
           <Text flexWrap="wrap" numberOfLines={3} style={{flex: 1, color: commentTextColor}}>
             {comments.datetime}: {comments.content}
           </Text>
-          <TouchableHighlight onPress={this.flag}>
+          <TouchableHighlight onPress={this.flag.bind(this, commentID)}>
             <Icon
               name="fontawesome|flag-o"
               size={19}
               color="#898888"
-              onPress={this.flag}
               style={styles.icon} />
           </TouchableHighlight>
         </View>
@@ -232,8 +232,49 @@ var VenueTab = React.createClass({
     }
   },
 
-  flag() {
-
+  flag(commentID) {
+    var context = this;
+    var route = config.serverURL + '/api/comments/';
+    var user = this.state.user;
+    var shouldDelete = false;
+    var flags;
+    fetch(route + commentID)
+      .then(response => response.json())
+      .then(json => {
+        var userAlreadyFlagged = false;
+        if (json.flags.length === 0) {
+          flags = [user];
+        } else {
+          for (var i = 0; i < json.flags.length; i++) {
+            if (json.flags[i] === user) {
+              userAlreadyFlagged = true;
+            }
+          }
+          if (userAlreadyFlagged === false) {
+            json.flags.push(user);
+            flags = json.flags;
+          }
+          if (flags.length === 2) {
+            shouldDelete = true;
+          }
+        }
+        if (userAlreadyFlagged === false) {
+          fetch(config.serverURL + '/api/comments/flag/' + json._id, {
+            method: 'post',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              flags: flags,
+              shouldDelete: shouldDelete
+            })
+          })
+          .then(function() {
+            context.reloadComments();
+          });
+        }
+      })
   },
 
   getRandomColor() {
@@ -265,6 +306,7 @@ var VenueTab = React.createClass({
     fetch(route)
       .then(response => response.json())
       .then(res => {
+        res.comments.reverse();
         for (var i = 0; i < res.comments.length; i++) {
           if (res.comments[i].creator === context.state.user) {
             userAlreadyPosted = true;
@@ -283,6 +325,7 @@ var VenueTab = React.createClass({
           var venue = this.state.venue._id;
           var datetime = new Date().toISOString();
           var atVenue = this.state.atVenue;
+          var flags = [];
           fetch(config.serverURL + '/api/comments/', {
             method: 'post',
             headers: {
@@ -296,7 +339,8 @@ var VenueTab = React.createClass({
               datetime: datetime,
               atVenue: atVenue,
               icon: icon,
-              color: color
+              color: color,
+              flags: flags
             })
           })
             .then(function(res) {
