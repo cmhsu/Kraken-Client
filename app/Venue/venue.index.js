@@ -30,6 +30,8 @@ var {
   TextInput,
   TouchableHighlight,
   View,
+  Animated,
+  Easing
   } = React;
 
 var RefreshableListView = require('react-native-refreshable-listview');
@@ -106,7 +108,7 @@ var VenueTab = React.createClass({
       var coords = nextProps.geolocation.coords;
       var distance = this.calculateDistance(coords, venue);
     }
-    if (venueChanged) {
+    if (venueChanged || nextProps.fromUserTab) {
       fetch(route)
         .then(response => response.json())
         .then(json => {
@@ -212,7 +214,11 @@ var VenueTab = React.createClass({
 
   renderComments(comments) {
     if (comments) {
-      var icon = 'fontawesome|' + comments.icon;
+      if (comments.icon == undefined) {
+        var icon = 'fontawesome|flag-o';
+      } else {
+        var icon = 'fontawesome|' + comments.icon;
+      }
       var color = comments.color;
       var atVenue = comments.atVenue;
       var commentID = comments._id;
@@ -507,8 +513,8 @@ var VenueTab = React.createClass({
           dataSource={this.state.dataSource}
           renderRow={this.renderComments}
           loadData={this.fetchVenue}
-          refreshDescription="Refreshing comments" />
-
+          refreshDescription="Refreshing comments"
+          refreshingIndictatorComponent={MyRefreshingIndicator}/>
         <View style={[styles.inputContainer, {marginBottom: this.state.bottom}]}>  
           <Button style={styles.cameraButton} onPress={this.toggleCamera}>
             <Icon
@@ -558,6 +564,46 @@ var VenueTab = React.createClass({
       </View>
     );
   }
+});
+
+var MyRefreshingIndicator = React.createClass({
+  getInitialState() {
+    return {
+      angle: new Animated.Value(0),
+    };
+  },
+
+  componentDidMount() {
+    this._animate();
+  },
+
+  _animate() {
+    var TIMES = 400;
+    this.state.angle.setValue(0);
+    this._anim = Animated.timing(this.state.angle, {
+      toValue: 140000,
+      duration: 140000,
+      easing: Easing.linear
+    }).start(this._animate);
+  },
+
+  render() {
+    return (
+      <View style={styles.refreshImageContainer}>
+        <Animated.Image
+          source={require('image!pin')}
+          style={[
+              styles.refreshImage,
+              {transform: [
+                {rotate: this.state.angle.interpolate({
+                  inputRange: [0, 360],
+                  outputRange: ['0deg', '360deg']
+                })},
+              ]}]}>
+        </Animated.Image>
+      </View>
+    )
+  },
 });
 
 
@@ -791,6 +837,18 @@ var styles = StyleSheet.create({
   },
   commentText: {
     flex: 1
+  },
+  refreshImage: {
+    height: 30,
+    width: 30,
+    justifyContent:'center',
+    backgroundColor:'transparent',
+    marginBottom: 10
+  },
+  refreshImageContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   }
 });
 
