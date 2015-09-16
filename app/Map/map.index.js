@@ -139,10 +139,19 @@ var MapTab = React.createClass({
       });
       this.eventEmitter.emit('positionUpdated', lastPosition);
     });
+    //navigator.geolocation.stopObserving();
 
     this.eventEmitter = this.props.eventEmitter;
 
     this._venueQuery(config.serverURL + '/api/venues', true);
+  },
+
+  componentWillUnmount: function() {
+    navigator.geolocation.clearWatch(this.watchID);
+  },
+
+  componentWillUpdate: function(nextProps, nextState) {
+    //console.log(nextProps);
   },
 
   // helper function to fetch venue data from server
@@ -174,7 +183,7 @@ var MapTab = React.createClass({
         });
         alert(error.message);
       },
-      {enableHighAccuracy: true, timeout: 20000, maximumAge: 1000}
+      {enableHighAccuracy: false, timeout: 20000, maximumAge: 30000}
     );
     //this.setState({user: this.props.user});
   },
@@ -202,7 +211,7 @@ var MapTab = React.createClass({
           venue.overallRating = 'Be the first to vote!'
         }
         var attendees = Object.keys(venue.attendees).length
-        if (attendees > 3) {
+        if (attendees > 2) {
           venue.annotationImage = {
             url: 'image!marker-kraken',
             height: 47,
