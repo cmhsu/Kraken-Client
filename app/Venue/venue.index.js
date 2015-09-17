@@ -161,7 +161,6 @@ var VenueTab = React.createClass({
         .then(response => response.json())
         .then(json => {
           json.comments.reverse();
-          json.datetime = moment(json.datetime).format("dddd, MMMM Do YYYY, h:mm:ss a");
           for (var i = 0; i < json.comments.length; i++) {
             json.comments[i].datetime = moment(json.comments[i].datetime).fromNow(true);
           }
@@ -202,6 +201,7 @@ var VenueTab = React.createClass({
           // Sets atVenue to true if user is within 100 metres
           attendeeCount: Object.keys(json.attendees).length
         });
+        //context.fetchMedia();
       })
   },
   
