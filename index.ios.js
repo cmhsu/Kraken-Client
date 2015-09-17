@@ -72,7 +72,7 @@ var persnickety = React.createClass({
     // Listen to socket for media updates
     var context = this;
     socket.removeAllListeners();
-    socket.on('media-' + venue.id, function (response) {
+    socket.on('media-' + venue._id, function (response) {
       context.eventEmitter.emit('mediaUpdated', response);
     });
 
@@ -87,6 +87,13 @@ var persnickety = React.createClass({
   },
 
   changeTab(tabName) {
+    var context = this;
+    if (tabName === 'My Kraken') {
+      context.eventEmitter.emit('refreshUserView');
+    }
+    if (tabName === 'map') {
+      context.eventEmitter.emit('refreshMap');
+    }
     this.setState({
       selectedTab: tabName
     });
@@ -112,7 +119,11 @@ var persnickety = React.createClass({
             onPress={ () => this.changeTab(this.state.venueClicked) }
             selected={ this.state.selectedTab === 'venue' }>
             <View style={ styles.pageView }>
-              <VenueTab fromUserTab={this.state.fromUserTab} venue={this.state.venue} geolocation={this.state.geolocation} eventEmitter={this.eventEmitter} />
+              <VenueTab fromUserTab={this.state.fromUserTab}
+                        venue={this.state.venue}
+                        geolocation={this.state.geolocation}
+                        eventEmitter={this.eventEmitter}
+              />
             </View>
           </TabBarIOS.Item>
 
@@ -122,7 +133,7 @@ var persnickety = React.createClass({
             onPress={ () => this.changeTab('My Kraken') }
             selected={ this.state.selectedTab === 'My Kraken' }>
             <View style={ styles.pageView }>
-              <UserTab eventEmitter={this.eventEmitter}/>
+              <UserTab eventEmitter={this.eventEmitter} />
             </View>
           </TabBarIOS.Item>
         </TabBarIOS>
