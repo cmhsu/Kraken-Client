@@ -147,10 +147,8 @@ var MapTab = React.createClass({
   componentDidMount: function() {
     var context = this;
     this.addListenerOn(this.eventEmitter, 'refreshMap', function() {
-      context.setState({venuePins: []}, function() {
-        context.setState({annotations: []}, function() {
-          context._venueQuery(config.serverURL + '/api/venues', true);
-        });
+      context.setState({venuePins: [], annotations: [], searchPins: []}, function() {
+        context._venueQuery(config.serverURL + '/api/venues', true);
       });
     });
   },
@@ -220,6 +218,7 @@ var MapTab = React.createClass({
           venue.overallRating = 'Be the first to vote!'
         }
         var attendees = Object.keys(venue.attendees).length;
+        venue.annotationImage = null;
         if (attendees > 2) {
           venue.annotationImage = {
             url: 'image!marker-kraken',
@@ -257,7 +256,9 @@ var MapTab = React.createClass({
 
   _displayPins: function () {
     var pins = this.state.venuePins.concat(this.state.searchPins);
-    this.setState({annotations: pins});
+    this.setState({annotations: pins}, function() {
+      this.render();
+    });
   },
 
   _onSearchTextChanged: function (event) {
