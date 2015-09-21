@@ -16,20 +16,12 @@
 1. [Team](#team)
 1. [Contributing](#contributing)
 
-## Usage
-
-> Some usage instructions
-
 ## Requirements
 
 - Node 0.10.x
 - Express 4.13.x
 - Mongo
 - Mongoose
-
-## Development
-
-
 
 ### Installing Dependencies
 
