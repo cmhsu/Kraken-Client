@@ -1,9 +1,5 @@
 # Kraken
 
-> To be added - description:
-  > View 1:
-  > View 2:
-
 ## Team
 
   - __Product Owner__: Corey Hsu
@@ -40,9 +36,7 @@
 From within the root directory:
 
 ```sh
-npm install -g bower
 npm install
-bower install
 ```
 
 ### Roadmap
