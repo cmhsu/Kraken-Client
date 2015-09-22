@@ -3,12 +3,25 @@
 var React = require('react-native');
 var EventEmitter = require('EventEmitter');
 var Subscribable = require('Subscribable');
+
+// require tab views
 var MapTab = require('./app/Map/map.index');
 var VenueTab = require('./app/Venue/venue.index');
-var WebTab = require('./app/GMap/gmap.index');
+var UserTab = require('./app/User/user.index');
+var VideoTab = require('./app/SCRecorder/screcorder.index');
+
 var MapboxGLMap = require('react-native-mapbox-gl');
 var mapRef = 'mapRef';
 var moment = require('moment');
+
+var config = require('./app/config');
+
+var io = require('socket.io-client/socket.io');
+var socket = io.connect(config.serverURL);
+
+// Required for sockets
+window.navigator.userAgent = "react-native";
+
 moment().format();
 
 var {
@@ -19,52 +32,99 @@ var {
   View,
   MapView,
   TabBarIOS,
-} = React;
+  } = React;
 
 var persnickety = React.createClass({
   mixins: [MapboxGLMap.Mixin, Subscribable.Mixin],
   getInitialState() {
     return {
       selectedTab: 'map',
-      venue: 'default venue'
+      venue: 'default venue',
+      venueImg: require('image!icon-venue'),
+      venueClicked: 'map',
+      fromUserTab: false,
+      venueLongitude: -122.408955,
+      venueLatitude: 37.783585
     }
   },
   componentWillMount: function() {
     this.eventEmitter = new EventEmitter();
+    this.getInitialLocation();
   },
   componentDidMount: function() {
     this.addListenerOn(this.eventEmitter, 'annotationTapped', this.selectVenue);
+    this.addListenerOn(this.eventEmitter, 'positionUpdated', this.updatePosition);
+    this.addListenerOn(this.eventEmitter, 'userFound', this.setUserState);
   },
 
-  _handleResponse(response) {
-    this.setState({venue: response});
-    this.getOverallRating();
+  updatePosition(position) {
+    this.setState({geolocation: position}); //THIS LINE CAUSES THE GEOLOCATION BEING PASSED TO ALL TABS
+  },
+
+  setUserState(userId) {
+    this.setState({userId: userId});
+  },
+
+  getInitialLocation: function () {
+    var context = this;
+    var latitude;
+    var longitude;
+    navigator.geolocation.getCurrentPosition(
+      (initialPosition) =>  {
+        context.setState({
+          venueLatitude: initialPosition.coords.latitude,
+          venueLongitude: initialPosition.coords.longitude
+        });
+      },
+      (error) => {
+        context.setState({
+          venueLatitude: 37.783585,
+          venueLongitude: -122.408955
+        });
+      });
   },
 
   selectVenue: function(eventObj) {
+    if (eventObj.fromUserTab === true) {
+      this.setState({fromUserTab: true});
+    } else {
+      this.setState({fromUserTab: false});
+    }
     var venue = eventObj.venue;
-    var newVenue = venue;
-    //var currDateTime = venue.venue.datetime;
+    this.setState({venueLatitude: +venue.latitude, venueLongitude: +venue.longitude});
 
-    //var currDateTime = new Date(venue.venue.datetime);
-    //var currYear = currDateTime.getFullYear();
-    //var currMonth = currDateTime.getMonth();
-    //var currDay = currDateTime.getDate();
-    //var currHour = currDateTime.getHours();
-    //var currMinute = currDateTime.getMinutes();
+    // Listen to socket for media updates
+    var context = this;
+    socket.removeAllListeners();
+    socket.on('media-' + venue._id, function (response) {
+      context.eventEmitter.emit('mediaUpdated', response);
+    });
 
-    //get correct datemin format
-    //$scope.datemin = currDateTime.toISOString().split('T')[0] + 'T00:00:00';
-    //venue.venue.datetime = new Date(currYear, currMonth, currDay, currHour, currMinute);
-    //venue.venue.datetime = venue.venue.datetime.split('T')[0]
-    //for (var i = 0; i < newVenue.comments.length;i++) {
-    //  newVenue.comments[i].datetime = moment(newVenue.comments[i].datetime).fromNow();
-    //}
-    this.setState({venue: newVenue});
-    this.changeTab('venue');
+    socket.on('mediaDeleted-' + venue.id, function (response) {
+      context.eventEmitter.emit('mediaDeleted', response);
+    });
+    socket.on('commentDeleted-' + venue.id, function (response) {
+      context.eventEmitter.emit('commentDeleted', response);
+    });
+
+    this.setState({venueImg: require('image!icon-venue')}, function() {
+      context.setState({venue: venue}, function() {
+        context.setState({venueClicked: 'venue'}, function() {
+          context.render();
+          context.changeTab('venue');
+        });
+      });
+    });
   },
 
   changeTab(tabName) {
+    var context = this;
+    if (tabName === 'My Kraken') {
+      context.eventEmitter.emit('refreshUserView');
+    }
+    if (tabName === 'map') {
+      context.eventEmitter.emit('refreshMap', this.state.venueLatitude, this.state.venueLongitude);
+    }
     this.setState({
       selectedTab: tabName
     });
@@ -73,36 +133,42 @@ var persnickety = React.createClass({
     //StatusBarIOS.setHidden(true);
     return (
       <View style={styles.container}>
-        <TabBarIOS>
-        <TabBarIOS.Item
-          title="Map"
-          icon={ require('image!map') }
-          onPress={ () => this.changeTab('map') }
-          selected={ this.state.selectedTab === 'map' }>
-          <MapTab eventEmitter={this.eventEmitter}/>
-        </TabBarIOS.Item>
+        <TabBarIOS
+          tintColor="white"
+          barTintColor="#333">
+          <TabBarIOS.Item
+            title="Map"
+            icon={ require('image!icon-map') }
+            onPress={ () => this.changeTab('map') }
+            selected={ this.state.selectedTab === 'map' }>
+            <MapTab eventEmitter={this.eventEmitter}/>
+          </TabBarIOS.Item>
 
-        <TabBarIOS.Item
-          title="Venue"
-          icon={ require('image!messages') }
-          onPress={ () => this.changeTab('venue') }
-          selected={ this.state.selectedTab === 'venue' }>
-          <View style={ styles.pageView }>
-            <VenueTab venue={this.state.venue}/>
-          </View>
-        </TabBarIOS.Item>
+          <TabBarIOS.Item
+            title="Venue"
+            icon={ this.state.venueImg }
+            onPress={ () => this.changeTab(this.state.venueClicked) }
+            selected={ this.state.selectedTab === 'venue' }>
+            <View style={ styles.pageView }>
+              <VenueTab fromUserTab={this.state.fromUserTab}
+                        venue={this.state.venue}
+                        geolocation={this.state.geolocation}
+                        eventEmitter={this.eventEmitter}
+                />
+            </View>
+          </TabBarIOS.Item>
 
-        <TabBarIOS.Item
-          title="G-Map"
-          icon={ require('image!settings') }
-          onPress={ () => this.changeTab('settings') }
-          selected={ this.state.selectedTab === 'settings' }>
-          <View style={ styles.pageView }>
-            <WebTab />
-          </View>
-        </TabBarIOS.Item>
-      </TabBarIOS>
-    </View>
+          <TabBarIOS.Item
+            title="My Kraken"
+            icon={ require('image!icon-fav') }
+            onPress={ () => this.changeTab('My Kraken') }
+            selected={ this.state.selectedTab === 'My Kraken' }>
+            <View style={ styles.pageView }>
+              <UserTab eventEmitter={this.eventEmitter} />
+            </View>
+          </TabBarIOS.Item>
+        </TabBarIOS>
+      </View>
     );
   }
 });
@@ -114,7 +180,6 @@ var styles = StyleSheet.create({
     justifyContent: 'center',
     //alignItems: 'center',
     backgroundColor: '#F5FCFF',
-    marginTop: 20
   },
   pageView: {
     flex: 1,
@@ -134,5 +199,4 @@ var styles = StyleSheet.create({
     padding: 2
   }
 });
-
 AppRegistry.registerComponent('persnickety', () => persnickety);

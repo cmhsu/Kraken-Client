@@ -1,5 +1,6 @@
-'use strict';
+// 'use strict';
 
+// require modules
 var React = require('react-native');
 var MapboxGLMap = require('react-native-mapbox-gl');
 var mapRef = 'mapRef';
@@ -9,8 +10,13 @@ var moment = require('moment');
 moment().format();
 var Display = require('react-native-device-display');
 var config = require('../config');
+var DeviceUUID = require("react-native-device-uuid");
+var { Icon, } = require('react-native-icons');
+var AutoComplete = require('react-native-autocomplete');
 
+// require React Native modules
 var {
+  AlertIOS,
   AppRegistry,
   StyleSheet,
   StatusBarIOS,
@@ -18,25 +24,29 @@ var {
   TextInput,
   TouchableHighlight,
   View,
-} = React;
+  Image
+  } = React;
 
 // create MapTab class
 var MapTab = React.createClass({
-  mixins: [MapboxGLMap.Mixin],
-  //initialize class with base states
+  mixins: [MapboxGLMap.Mixin, Subscribable.Mixin],
+  // initialize class with base states
   getInitialState() {
     return {
       searchString: '',
-      center: {
-      latitude: 37.783585,
-      longitude: -122.408955
-      },
-      zoom: 13,
+      zoom: 15,
+      autoSearch: [],
       venuePins: [],
       searchPins: [],
-      annotations: []
-     };
+      annotations: [],
+      autocomplete: false,
+      mapStyle: ['asset://styles/emerald-v8.json', 'asset://styles/dark-v8.json', 'asset://styles/light-v8.json', 'asset://styles/mapbox-streets-v8.json', 'asset://styles/satellite-v8.json'],
+      currentMap: 1,
+      showMap: true
+    };
   },
+
+  // update map on region change
   onRegionChange(location) {
     this.setState({
       currentZoom: location.zoom,
@@ -53,244 +63,419 @@ var MapTab = React.createClass({
   onOpenAnnotation(annotation) {
     console.log(annotation);
   },
-  onRightAnnotationTapped(e) {
-    //console.log(e);
-    var id = e.id;
-    for (var i = 0; i < this.state.annotations.length; i++) {
-      if (this.state.annotations[i].id === id) {
-        var venue = this.state.annotations[i];
-        //for (var i = 0; i < venue.comments.length; i++) {
-        //  venue.comments[i].datetime = moment(venue.comments[i].datetime).fromNow();
-        //}
-        this.eventEmitter.emit('annotationTapped', { venue: this.state.annotations[i] });
-        break;
+
+  // Mapbox helper function for when right annotation press event is detected
+  onRightAnnotationTapped(rightAnnot) {
+    for(var i = 0; i < this.state.annotations.length; i++) {
+      var currVenue = this.state.annotations[i];
+      if(currVenue.id === rightAnnot.id) {
+        if(currVenue._id) {
+          this.eventEmitter.emit('annotationTapped', { venue: currVenue });
+          break;
+        } else {
+          fetch(config.serverURL+'/api/venues', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              title: currVenue.title,
+              foursquareID: currVenue.id,
+              description: currVenue.description,
+              address: currVenue.address,
+              latitude: currVenue.latitude,
+              longitude: currVenue.longitude,
+              creator: this.state.user,
+              ratings: {},
+              datetime: new Date().toISOString()
+            })
+          })
+            .then(response => response.json())
+            .then(json => {
+              this.eventEmitter.emit('annotationTapped', { venue: json});
+            })
+            .then(() => this.setState({searchPins: []}))
+            .then(() => this.setState({venuePins: [], annotations: []}))
+            .then(() => this._venueQuery(config.serverURL + '/api/venues', true))
+            .catch(function(err) {
+              console.log('error');
+              console.log(newVenue);
+              console.log(err);
+            });
+          break;
+        }
       }
     }
-    //{ _id: 'hopefullythiswillbemongoID',
-    // id: 'marker1',
-    //  title: 'This is marker 1',
-    //  latitude: 40.72052634,
-    //  subtitle: 'It has a rightCalloutAccessory too',
-    //  longitude: -73.97686958312988 }
-
-
   },
+
   componentWillMount: function() {
+    // retrieve user id, may be replaced with device UUID in the future
+    var context = this;
     this.eventEmitter = this.props.eventEmitter;
-    fetch(config.serverURL + '/api/venues')
+    // Get Device UUID
+    DeviceUUID.getUUID().then((uuid) => {
+      return uuid;
+    })
+      .then((uuid) => {
+        fetch(config.serverURL + '/api/users/', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({token: uuid})
+        }) // no ;
+          .then(response => response.json())
+          .then(json => context.setState({user: json._id}, function() {
+            context.eventEmitter.emit('userFound', context.state.user);
+            return;
+          }));
+      })
+      .catch((err) => {
+        console.log(err);
+      });
+
+    this._currentLocation();
+
+    this.watchID = navigator.geolocation.watchPosition((lastPosition) => {
+      this.setState({
+        geolocation: lastPosition,
+      });
+      this.eventEmitter.emit('positionUpdated', lastPosition);
+    });
+
+    this._venueQuery(config.serverURL + '/api/venues', true);
+  },
+
+  componentDidMount: function() {
+    var context = this;
+    this.addListenerOn(this.eventEmitter, 'refreshMap', function(latitude, longitude) {
+      context.setState({showMap: false});
+      context.setState({center: {
+        latitude: latitude,
+        longitude: longitude
+      }});
+      var annotations = context.state.annotations;
+      var length = annotations.length;
+      context.setState({annotations: [], venuePins: [], searchPins: []}, function() {
+        context._venueQuery(config.serverURL + '/api/venues', true);
+      });
+    });
+  },
+
+  // helper function to fetch venue data from server
+  _venueQuery: function(url, inDB) {
+    this.setState({showMap: true});
+    fetch(url)
       .then(response => response.json())
-      .then(json => this._handleResponse(json, true));
+      .then(json => this._handleResponse(json, inDB))
+      .catch(function(err) {
+        console.log(err);
+      });
   },
 
   _handleResponse: function (venues, inDb) {
-    var that = this;
+    var context = this;
     venues.forEach(function (venue) {
-      console.log(that.state);
-      var coords = venue.coordinates.split(',');
-      var tempArray = [];
-
-      venue.latitude = parseFloat(coords[0]);
-      venue.longitude = parseFloat(coords[1]);
       venue.rightCalloutAccessory = {
         url: 'image!arrow',
-          height: 25,
-          width: 25
+        height: 25,
+        width: 25
       };
+      venue.subtitle = venue.description;
       if(inDb) {
-        venue.subtitle = venue.description;
+        venue.id = '';
         venue.id = venue._id;
+        var numRatings = Object.keys(venue.ratings).length;
         var ratingsSum = 0;
 
-        if (venue.ratings) {
-          for (var i = 0; i < venue.ratings.length; i++) {
-            ratingsSum += venue.ratings[i].rating;
+        if (numRatings > 0) {
+          for (var userID in venue.ratings) {
+            ratingsSum += venue.ratings[userID];
           }
-          venue.overallRating = Math.round(ratingsSum / venue.ratings.length);
+          venue.overallRating = Math.round(ratingsSum / numRatings);
         } else {
           venue.overallRating = 'Be the first to vote!'
         }
-        venue.annotationImage = {
-          url: 'image!pin',
-          height: 25,
-          width: 25
-        };
-        venue.datetime = moment(venue.datetime).format("dddd, MMMM Do YYYY, h:mm:ss a");
-        tempArray = that.state.venuePins.slice(0);
-        tempArray.push(venue);
-        that.setState({venuePins: tempArray});
+        var attendees = Object.keys(venue.attendees).length;
+        venue.annotationImage = {};
+        if (attendees > 3) {
+          venue.annotationImage = {
+            url: 'image!marker-kraken',
+            height: 47,
+            width: 44
+          };
+        } else if (attendees > 1) {
+          venue.annotationImage = {
+            url: 'image!marker-2',
+            height: 27,
+            width: 41
+          };
+        } else {
+          venue.annotationImage = {
+            url: 'image!marker-1',
+            height: 27,
+            width: 41
+          };
+        }
+        context.setState({venuePins: context.state.venuePins.concat(venue)});
       } else {
-        console.log(that.state);
         venue.annotationImage = {
-          url: 'image!searchPin',
-          height: 25,
-          width: 25
+          url: 'image!marker-search',
+          height: 27,
+          width: 40
         };
-        tempArray = that.state.searchPins;
-        tempArray.push(venue);
-        that.setState({searchPins: tempArray});
+        venue.comments = [];
+        context.setState({searchPins: context.state.searchPins.concat(venue)});
       }
     });
-    //this.setState({annotations: venues});
-    this._displayPins();
-
+    context._displayPins();
   },
 
+  // helper function to refresh display of all pins on map
   _displayPins: function () {
-    var pins = this.state.venuePins.concat(this.state.searchPins);
-    console.log(pins);
-    this.setState({annotations: pins});
-  },
+    var context = this;
+    var pins = this.state.searchPins.concat(this.state.venuePins);
 
-  _onSearchTextChanged: function (event) {
-    console.log('onSearchTextChanged');
-    this.setState({ searchString: event.nativeEvent.text });
-  },
-
-  _onSearchTextSubmit: function () {
-    console.log('submitted');
-    console.log(this.state.searchString);
-    this.setState({searchPins: []});
-    fetch(config.serverURL + '/api/search/query/'+this.state.searchString+'/'+this.state.center.latitude+','+this.state.center.longitude)
-    .then(response => response.json())
-    .then(json => this._handleResponse(json, false))
-    .catch(function(err) {
-      console.log(err);
+    this.setState({annotations: pins}, function() {
+      if(this.state.autocomplete) {
+        this.setCenterCoordinateZoomLevelAnimated(mapRef, this.state.searchPins[0].latitude, this.state.searchPins[0].longitude, 15);
+        setTimeout(context.selectAnnotationAnimated.bind(context, mapRef, 0), 1000);
+      }
+      this.setState({autocomplete: false});
+      context.render();
     });
   },
 
+  // helper function to update center of map
+  _currentLocation: function() {
+    navigator.geolocation.getCurrentPosition(
+      (initialPosition) =>  this.setState({
+        geolocation: initialPosition,
+        center: {
+          latitude: initialPosition.coords.latitude,
+          longitude: initialPosition.coords.longitude
+        }
+      }),
+      (error) => {
+        this.setState({
+          center: {
+            latitude: 37.783585,
+            longitude: -122.408955
+          }
+        });
+        alert(error.message);
+      },
+      {enableHighAccuracy: true, timeout: 20000, maximumAge: 1000}
+    );
+    //this.setState({user: this.props.user});
+  },
+
+  // update autocomplete by querying data as search text changes
+  _onSearchTextChanged: function (text) {
+    this.setState({ searchString: text });
+    this.setState({searchPins: []});
+    fetch(config.serverURL + '/api/search/query/'+this.state.searchString+'/'+this.state.latitude+','+this.state.longitude)
+      .then(response => response.json())
+      .then(json => this.setState({autoSearch: json.map(function(search) {
+        return search.title;
+      })}));
+  },
+
+  // search based on autocomplete selection
+  _onAutoSubmit: function (query) {
+    this.setState({searchPins: [], autocomplete: true});
+    this._venueQuery(config.serverURL + '/api/search/query/'+query+'/'+this.state.latitude+','+this.state.longitude, false);
+  },
+
+  // search using submit button
+  _onSearchTextSubmit: function () {
+    // this._textInput.setNativeProps({text: ''});
+    this.setState({searchPins: []});
+    this._venueQuery(config.serverURL + '/api/search/query/'+this.state.searchString+'/'+this.state.latitude+','+this.state.longitude, false);
+  },
+  // method for recentering and reset zoom level based on current location 
+  _onCenterPressed: function () {
+    var context = this;
+    var latitude;
+    var longitude;
+    navigator.geolocation.getCurrentPosition(
+      (initialPosition) =>  {
+        latitude = initialPosition.coords.latitude;
+        longitude = initialPosition.coords.longitude;
+        context.setCenterCoordinateZoomLevelAnimated(mapRef, latitude, longitude, 15);
+      },
+      (error) => {
+        latitude = 37.783585;
+        longitude = -122.408955;
+        this.setCenterCoordinateZoomLevelAnimated(mapRef, latitude, longitude, 15);
+      });
+  },
+
+  // method for changing style of map on button press - NOT in working state because new map style covers old pins
+  _onStylePressed: function () {
+    if(this.state.currentMap === 4) {
+      this.setState({currentMap: 0});
+    } else {
+      this.setState({currentMap: this.state.currentMap+1});
+    }
+  },
+
+  // map view render
   render: function() {
-    //StatusBarIOS.setHidden(true);
+    var map = this.state.showMap ? <MapboxGLMap
+      style={styles.map}
+      direction={0}
+      rotateEnabled={true}
+      scrollEnabled={true}
+      zoomEnabled={true}
+      showsUserLocation={true}
+      ref={mapRef}
+      accessToken={'pk.eyJ1IjoibWFyeW1hc29uIiwiYSI6IjM1NGVhNWZmNzQ5Yjk5NTczMDFhMzc3Zjg2ZGEyYzI0In0.7IdD26iFQhD2b6LbTIw_Sw'}
+      styleURL={'asset://styles/light-v8.json'}
+      centerCoordinate={this.state.center}
+      userLocationVisible={true}
+      zoomLevel={this.state.zoom}
+      onRegionChange={this.onRegionChange}
+      onRegionWillChange={this.onRegionWillChange}
+      annotations={this.state.annotations}
+      onOpenAnnotation={this.onOpenAnnotation}
+      onRightAnnotationTapped={this.onRightAnnotationTapped}
+      onUpdateUserLocation={this.onUpdateUserLocation}/> : null;
+
     return (
       <View style={styles.container}>
-        {/*<Text style={styles.text} onPress={() => this.setDirectionAnimated(mapRef, 0)}>
-          Set direction to 0
-        </Text>
-        <Text style={styles.text} onPress={() => this.setZoomLevelAnimated(mapRef, 6)}>
-          Zoom out to zoom level 6
-        </Text>
-        <Text style={styles.text} onPress={() => this.setCenterCoordinateAnimated(mapRef, 48.8589, 2.3447)}>
-          Go to Paris at current zoom level {parseInt(this.state.currentZoom)}
-        </Text>
-        <Text style={styles.text} onPress={() => this.setCenterCoordinateZoomLevelAnimated(mapRef, 35.68829, 139.77492, 14)}>
-          Go to Tokyo at fixed zoom level 14
-        </Text>
-        <Text style={styles.text} onPress={() => {
-          this.annotate({
-            latitude: this.state.latitude,
-            longitude:  this.state.longitude,
-            title: 'This is a new marker',
-            annotationImage: {
-              url: 'https://cldup.com/CnRLZem9k9.png',
-              height: 25,
-              width: 25
-            }
-          });
-        }}>
-          Add new marker
-        </Text>
-        <Text style={styles.text} onPress={() => this.selectAnnotationAnimated(mapRef, 0)}>
-          Open first popup
-        </Text>
-        <Text style={styles.text} onPress={() => {
-          this.setState({
-            annotations: this.state.annotations.slice(1, this.state.annotations.length)
-          });
-        }}>
-          Remove first annotation
-        </Text> */}
-        <MapboxGLMap
-          style={styles.map}
-          direction={0}
-          rotateEnabled={true}
-          scrollEnabled={true}
-          zoomEnabled={true}
-          showsUserLocation={true}
-          ref={mapRef}
-          accessToken={'pk.eyJ1IjoibWFyeW1hc29uIiwiYSI6IjM1NGVhNWZmNzQ5Yjk5NTczMDFhMzc3Zjg2ZGEyYzI0In0.7IdD26iFQhD2b6LbTIw_Sw'}
-          styleURL={'asset://styles/emerald-v7.json'}
-          centerCoordinate={this.state.center}
-          userLocationVisible={true}
-          zoomLevel={this.state.zoom}
-          onRegionChange={this.onRegionChange}
-          onRegionWillChange={this.onRegionWillChange}
-          annotations={this.state.annotations}
-          onOpenAnnotation={this.onOpenAnnotation}
-          onRightAnnotationTapped={this.onRightAnnotationTapped}
-          onUpdateUserLocation={this.onUpdateUserLocation} />
-        <View style={styles.flowRight}>
-          <TextInput
-            style={styles.searchInput}
-            onChange={this._onSearchTextChanged}
+        <View style={styles.headerContainer}>
+          <Image style={styles.logo}
+                 source={require('image!tab-logo')} />
+        </View>
+
+        {map}
+
+        <View style={styles.autocompleteContainer}>
+          <AutoComplete
+            ref={component => this._textInput = component}
+            style={styles.autocomplete}
+
+            onTyping={this._onSearchTextChanged}
+            onSelect={this._onAutoSubmit}
             onSubmitEditing={this._onSearchTextSubmit}
+
+            suggestions={this.state.autoSearch}
+
+            placeholder='Search'
+            clearButtonMode='always'
             returnKeyType='search'
-            placeholder='Search'/>
-        </View>    
+            textAlign='center'
+            clearTextOnFocus={true}
+
+            maximumNumberOfAutoCompleteRows={7}
+            applyBoldEffectToAutoCompleteSuggestions={true}
+            reverseAutoCompleteSuggestionsBoldEffect={true}
+            showTextFieldDropShadowWhenAutoCompleteTableIsOpen={false}
+            disableAutoCompleteTableUserInteractionWhileFetching={true}
+            autoCompleteTableViewHidden={false}
+
+            autoCompleteTableBorderColor='#DDDDDD'
+            autoCompleteTableBackgroundColor='azure'
+            autoCompleteTableCornerRadius={0}
+            autoCompleteTableBorderWidth={1}
+
+            autoCompleteRowHeight={30}
+
+            autoCompleteFontSize={15}
+            autoCompleteRegularFontName='Helvetica Neue'
+            autoCompleteBoldFontName='Helvetica Bold'
+            autoCompleteTableCellTextColor='#47b3c8' />
+        </View>
+        {/* <View style={styles.searchContainer}>
+         <TextInput
+         ref={component => this._textInput = component}
+         style={styles.searchInput}
+         onChange={this._onSearchTextChanged}
+         onSubmitEditing={this._onSearchTextSubmit}
+         returnKeyType='search'
+         placeholder={'  Search'}/>
+         </View> */}
+        <TouchableHighlight onPress={this._onCenterPressed}>
+          <Image
+            style={styles.button}
+            source={require('image!icon-target')}
+            />
+        </TouchableHighlight>
       </View>
     );
   }
 });
 
 var styles = StyleSheet.create({
+
+  // main view container
   container: {
     flexDirection: 'column',
     flex: 1,
   },
-  beer:{
-
-  },
+  // map view
   map: {
-    flex: 5
+    flex: 5,
+    top: 30
   },
-  flowRight: {
+  // main logo
+  logo: {
+  },
+
+  autocompleteContainer: {
     position: 'absolute',
-    top: 0,
+    top: 60,
+    width: Display.width,
+    paddingTop: 5,
+    paddingBottom: 6,
+    backgroundColor: '#CCC',
+  },
+  autocomplete: {
+    width: Display.width * 0.95,
+    marginLeft: Display.width * 0.025,
+    height: 36,
+    padding: 4,
+    fontSize: 16,
+    color: '#8C8C8C',
+    borderRadius: 10,
+    backgroundColor: 'white'
+  },
+  // header container and children
+  headerContainer: {
+    justifyContent: 'center',
+    width: Display.width,
+    height: 76,
+    alignItems: 'center',
+    backgroundColor: "#47b3c8",
+  },
+  // search bar
+  searchContainer: {
+    position: 'absolute',
+    top: 90,
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'stretch'
   },
-  searchInput: {
+  venueName: {
+    flex: 1,
+    fontFamily: 'Avenir',
+    fontSize: 20,
+    textAlign: 'center',
+    marginRight: 30,
+    padding: 10,
+    color: 'white',
+  },
+  // center button
+  button: {
+    height: 40,
+    width: 40,
     position: 'absolute',
-    top: 0,
-    height: 36,
-    width: Display.width*.89,
-    padding: 4,
-    fontSize: 12,
-    borderWidth: 0.5,
-    borderColor: '#23FCA6',
-    color: '#8C8C8C'
-  }
+    bottom: 50,
+    right: 40
+  },
 });
 
 module.exports = MapTab;
-
-
-
-//annotations
-// {
-//   latitude: 40.72052634,
-//   longitude: -73.97686958312988,
-//   title: 'This is marker 1',
-//   subtitle: 'It has a rightCalloutAccessory too',
-//   rightCalloutAccessory: {
-//     url: 'https://cldup.com/9Lp0EaBw5s.png',
-//     height: 1000,
-//     width: 100
-//   },
-//   annotationImage: {
-//     url: 'https://cldup.com/CnRLZem9k9.png',
-//     height: 100,
-//     width: 100
-//   },
-//   id: 'marker1'
-// }, {
-//   latitude: 40.714541341726175,
-//   longitude: -74.00579452514648,
-//   title: 'Important!',
-//   subtitle: 'Neat, this is a custom annotation image',
-//   annotationImage: {
-//     url: 'https://cldup.com/7NLZklp8zS.png',
-//     height: 25,
-//     width: 25
-//   },
-//   id: 'marker2'
-// }
