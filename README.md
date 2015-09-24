@@ -1,4 +1,4 @@
-# Kraken
+# [Kraken](http://www.itskraken.com/)
 An iOS application for venue/event discovery, providing users with real-time feedback on activity and general vibe
 within their vicinity based on anonymous crowdsourced ratings and comments
 
